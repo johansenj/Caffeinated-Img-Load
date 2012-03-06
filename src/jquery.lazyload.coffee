@@ -17,7 +17,9 @@
   # minified (especially when both are regularly referenced in your plugin).
 
   # Create the defaults once
-  pluginName = 'lazyload'
+  pluginName = 'lazyload' 
+
+  eventKeyIndex = 0 
 
   defaults = 
     threshold: 0
@@ -32,11 +34,16 @@
 
   # The actual plugin constructor
   class Plugin
+    
+    eventKeyIndex : 0
+    
     constructor: (@element, options) ->
       # jQuery has an extend method which merges the contents of two or
       # more objects, storing the result in the first object. The first object
       # is generally empty as we don't want to alter the default options for
       # future instances of the plugin
+      @eventKey = eventKeyIndex
+      eventKeyIndex +=  1
       @$element = $(element)
       @options = $.extend {}, defaults, options
       @options.container ?= window
@@ -44,6 +51,7 @@
       @_name = pluginName
       @init()
       @update()
+
     init: ->
       # Place initialization logic here
       # You already have access to the DOM element and the options via the instance,
@@ -55,26 +63,47 @@
 
       @element.loaded = false
 
+      # Set up scroll event if event set to scroll
       if @options.event.indexOf("scroll") is 0
-        @$container.on @options.event, null, null, =>
-          $.data(@element,"plugin_#{pluginName}").update()
+        @$container.on "#{@options.event}.plugin_#{pluginName}#{@eventKey}", null, null, =>
+          if $.data(@element,"plugin_#{pluginName}") != undefined
+            @.update()
+          else
+            @cleanup()
+      # if event isnt scroll set the different event on the picture
       else
         @$element.on @options.event, null, null, =>
-          if not @element.loaded
+          if $.data(@element,"plugin_#{pluginName}") != undefined
             @$element.trigger "appear"
+          else
+            @cleanup()
 
-      $(window).on "resize", null, null, =>
-        $.data(@element,"plugin_#{pluginName}").update()
+      # On window resize even 
+      $(window).on "resize.plugin_#{pluginName}#{@eventKey}", null, null, =>
+        if $.data(@element,"plugin_#{pluginName}") != undefined
+          @update()
+        else
+          @cleanup()
       
+      # Event that is triggers the image to appear 
       @$element.one "appear", =>
         @$element
           .on "load", null, null, =>
             @$element
               .hide()
               .attr("src", @$element.data(@options.data_attribute))[@options.effect](@options.effect_speed)
-              .off()
             @element.loaded = true
+            @cleanup()
           .attr "src", @$element.data @options.data_attribute
+
+      # Checks to see if any images are in current view on pluggin initiation
+      @update()
+
+    cleanup: ->
+      @$element.off()
+      @$container.off(".plugin_#{pluginName}#{@eventKey}")
+      $(window).off(".plugin_#{pluginName}#{@eventKey}")
+      $.removeData(@element)
 
     update: ->
       counter = 0
@@ -133,6 +162,6 @@
   # preventing against multiple instantiations
   $.fn[pluginName] = (options) ->
     for item in @
-      if !$.data(item, "plugin_#{pluginName}")
+      if (item.loaded is undefined ) and ( !$.data(item, "plugin_#{pluginName}"))
         $.data(item, "plugin_#{pluginName}", new Plugin(item, options))
 )(jQuery, window, document)
